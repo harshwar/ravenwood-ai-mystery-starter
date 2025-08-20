@@ -49,22 +49,10 @@ const {
 const genAI = new GoogleGenerativeAI(process.env.API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// We'll use these variables to store the current game state
-let mystery = {};
-let chat;
+const sessions = new Map();
 
-// Function to generate a random mystery
-const generateMystery = () => {
-    return {
-        killer: suspects[Math.floor(Math.random() * suspects.length)],
-        weapon: weapons[Math.floor(Math.random() * weapons.length)],
-        motive: motives[Math.floor(Math.random() * motives.length)],
-    };
-};
-
-// Base prompt function to set up the game's core story and rules
 const basePrompt = (currentMystery) => {
-    return `
+  return `
 You are a text-based murder mystery game master. Your role is to guide the player through a dynamic,
 ever-changing mystery. A murder has occurred at a packed college house party.
 
@@ -94,79 +82,123 @@ Instructions:
 `;
 };
 
-// Function to reset the game
-const resetGame = () => {
-    mystery = generateMystery();
-    console.log("New mystery generated:", mystery);
+const generateMystery = () => {
+  return {
+    killer: suspects[Math.floor(Math.random() * suspects.length)],
+    weapon: weapons[Math.floor(Math.random() * weapons.length)],
+    motive: motives[Math.floor(Math.random() * motives.length)],
+  };
+};
 
-    chat = model.startChat({
+const resetGame = () => {
+    const newMystery = generateMystery();
+    console.log("New mystery generated:", newMystery);
+
+    const mainChat = model.startChat({
         history: [{
             role: "user",
-            parts: [{ text: basePrompt(mystery) }]
+            parts: [{ text: basePrompt(newMystery) }]
         }],
         generationConfig: {
             maxOutputTokens: 500,
         },
     });
+
+    const suspectChats = new Map();
+    return { mystery: newMystery, mainChat, suspectChats };
 };
 
-// Reset the game when the server first starts
-resetGame();
-
-// Enable CORS and Express middleware
 app.use(cors());
 app.use(express.static(path.join(__dirname, "")));
 app.use(express.json());
 
-// API route to start the game
+app.post("/api/new-session", (req, res) => {
+    const sessionId = Date.now().toString() + Math.random().toString().substring(2, 6);
+    const newSessionData = resetGame();
+    sessions.set(sessionId, newSessionData);
+    res.json({ sessionId });
+});
+
 app.post("/api/start-game", async (req, res) => {
-  try {
-    const result = await chat.sendMessage(`
+    const { sessionId } = req.body;
+    if (!sessions.has(sessionId)) {
+        return res.status(404).json({ response: "Session not found." });
+    }
+
+    const { mainChat } = sessions.get(sessionId);
+
+    try {
+        const result = await mainChat.sendMessage(`
         As the game master, provide an opening narrative. 
         Introduce the player as a student who is also a skilled amateur detective. 
         Describe the scene of the crime and the initial chaos of the party. 
         Describe how the body was found. End by asking the player what they want to do next.
         `);
 
-    const response = await result.response;
-    const text = response.text();
-
-    res.json({ response: text });
-  } catch (error) {
-    console.error("Error starting the game:", error);
-    res.status(500).json({
-      response: "An error occurred while starting the game.",
-    });
-  }
+        const response = await result.response;
+        const text = response.text();
+        res.json({ response: text, location: "living_room" });
+    } catch (error) {
+        console.error("Error starting the game:", error);
+        res.status(500).json({
+            response: "An error occurred while starting the game.",
+        });
+    }
 });
 
-// Main route to handle game turns
 app.post("/api/game-turn", async (req, res) => {
-  try {
-    const playerInput = req.body.input;
-    console.log("Player input received:", playerInput);
+    const { sessionId, input, location } = req.body;
+    if (!sessions.has(sessionId)) {
+        return res.status(404).json({ response: "Session not found." });
+    }
 
-    const result = await chat.sendMessage(playerInput);
-    const response = await result.response;
-    const text = response.text();
+    const session = sessions.get(sessionId);
+    const { mainChat } = session;
+    session.location = location;
 
-    res.json({ response: text });
-  } catch (error) {
-    console.error("Error communicating with the AI:", error);
-    res.status(500).json({
-      response:
-        "An error occurred while getting the AI's response. Please try again later.",
-    });
-  }
+    try {
+        const result = await mainChat.sendMessage(input);
+        const response = await result.response;
+        const text = response.text();
+        res.json({ response: text, location: session.location });
+    } catch (error) {
+        console.error("Error communicating with the AI:", error);
+        res.status(500).json({
+            response: "An error occurred while getting the AI's response. Please try again later.",
+        });
+    }
 });
 
-// NEW API endpoint to generate a new game
-app.post('/api/new-game', (req, res) => {
-    resetGame();
-    res.json({ message: "Game reset successfully." });
+app.post("/api/interrogate", async (req, res) => {
+    const { sessionId, suspectName, input } = req.body;
+    if (!sessions.has(sessionId)) {
+        return res.status(404).json({ response: "Session not found." });
+    }
+
+    const session = sessions.get(sessionId);
+    const { suspectChats } = session;
+
+    let suspectChat = suspectChats.get(suspectName);
+    if (!suspectChat) {
+        const personaPrompt = `You are now roleplaying as ${suspectName}, one of the suspects in the murder mystery. The player is interrogating you. You must act in character based on your description. The murder happened at a college house party. The victim is Rohan Sharma. The killer is ${session.mystery.killer}. You must keep this secret and act accordingly. Respond to the player's questions as ${suspectName} would.`;
+        suspectChat = model.startChat({
+            history: [{ role: "user", parts: [{ text: personaPrompt }] }],
+            generationConfig: { maxOutputTokens: 500 },
+        });
+        suspectChats.set(suspectName, suspectChat);
+    }
+    
+    try {
+        const result = await suspectChat.sendMessage(input);
+        const response = await result.response;
+        const text = response.text();
+        res.json({ response: text });
+    } catch (error) {
+        console.error("Error during interrogation:", error);
+        res.status(500).json({ response: "An error occurred during interrogation." });
+    }
 });
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
-  console.log(`Go to http://localhost:${port} to view the game.`);
 });

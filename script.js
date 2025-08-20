@@ -1,4 +1,4 @@
-// Get the HTML elements we need to work with
+// Get all HTML elements
 const sendButton = document.getElementById('send-button');
 const playerInput = document.getElementById('player-input');
 const storyDisplay = document.getElementById('story-display');
@@ -9,129 +9,182 @@ const startButton = document.getElementById('start-button');
 const startScreen = document.getElementById('start-screen');
 const gameUI = document.getElementById('game-ui');
 const newGameButton = document.getElementById('new-game-button');
+const gameBackground = document.getElementById('game-background');
+const interrogationBox = document.getElementById('interrogation-box');
+const interrogationSuspectName = document.getElementById('interrogation-suspect-name');
+const interrogationDisplay = document.getElementById('interrogation-display');
+const interrogationInput = document.getElementById('interrogation-input');
+const interrogationSendButton = document.getElementById('interrogation-send-button');
+const closeInterrogationButton = document.getElementById('close-interrogation');
 
-// Function to send the player's input to our backend and get a response
-async function getGameResponse(playerInput) {
+let sessionId = localStorage.getItem('sessionId');
+let currentLocation = 'living_room';
+let currentSuspect = '';
+
+// Use a Map to store conversations for each suspect on the frontend
+const interrogationHistories = new Map();
+
+// Define the backgrounds
+const backgrounds = {
+    'living_room': 'url(assets/images/living_room.webp)',
+    'kitchen': 'url(assets/images/kitchen.webp)',
+    'basement': 'url(assets/images/basement.webp)',
+    'bedroom': 'url(assets/images/bedroom.webp)',
+    'balcony': 'url(assets/images/balcony.webp)'
+};
+
+function updateBackground(location) {
+    console.log('Attempting to update background to:', location);
+    gameBackground.style.backgroundImage = backgrounds[location] || backgrounds['living_room'];
+}
+
+async function getGameResponse(endpoint, body) {
+    if (!sessionId) {
+        alert("Please start a new game first.");
+        return { response: "Session not found." };
+    }
     try {
-        const response = await fetch('/api/game-turn', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ input: playerInput }),
+            body: JSON.stringify({ sessionId, ...body }),
         });
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        const data = await response.json();
-        return data.response;
-
+        return await response.json();
     } catch (error) {
         console.error("Error communicating with the server:", error);
-        return "An error occurred. Please try again.";
+        return { response: "An error occurred. Please try again." };
     }
 }
 
-// Function to handle the "Send" button click and other actions
-async function handleSend(messageFromButton = null) {
-    const input = messageFromButton || playerInput.value.trim();
-
-    if (!input) {
-        return;
-    }
-
+async function handleMainConversation(input) {
+    if (!input) return;
     storyDisplay.innerHTML += `<div class="player-message"><strong>You:</strong> ${input}</div>`;
 
-    if (!messageFromButton) {
-        playerInput.value = '';
+    const data = await getGameResponse('/api/game-turn', { input, location: currentLocation });
+    if (data.response) {
+        updateBackground(data.location);
+        storyDisplay.innerHTML += `<div class="ai-message"><strong>AI:</strong> ${data.response}</div>`;
+        storyDisplay.scrollTop = storyDisplay.scrollHeight;
     }
-
-    const response = await getGameResponse(input);
-
-    storyDisplay.innerHTML += `<div class="ai-message"><strong>AI:</strong> ${response}</div>`;
-    
-    storyDisplay.scrollTop = storyDisplay.scrollHeight;
 }
 
-// Function to start the game
+async function handleInterrogation(input) {
+    if (!input) return;
+
+    // Append the user's message to the display
+    interrogationDisplay.innerHTML += `<div class="player-message"><strong>You:</strong> ${input}</div>`;
+
+    // Store the conversation locally
+    let history = interrogationHistories.get(currentSuspect) || '';
+    history += `<div class="player-message"><strong>You:</strong> ${input}</div>`;
+
+    const data = await getGameResponse('/api/interrogate', { suspectName: currentSuspect, input });
+    if (data.response) {
+        // Append the AI's response to the display and local history
+        interrogationDisplay.innerHTML += `<div class="ai-message"><strong>${currentSuspect}:</strong> ${data.response}</div>`;
+        history += `<div class="ai-message"><strong>${currentSuspect}:</strong> ${data.response}</div>`;
+        interrogationDisplay.scrollTop = interrogationDisplay.scrollHeight;
+    }
+
+    // Save the updated history
+    interrogationHistories.set(currentSuspect, history);
+}
+
 async function startGame() {
-    try {
-        const response = await fetch('/api/start-game', {
-            method: 'POST',
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const initialStory = data.response;
-
+    if (!sessionId) {
+        await startNewSession();
+        return;
+    }
+    const data = await getGameResponse('/api/start-game', { location: currentLocation });
+    if (data.response) {
+        updateBackground(data.location);
         startScreen.style.display = 'none';
         gameUI.style.display = 'block';
-
-        storyDisplay.innerHTML = `<div class="ai-message"><strong>AI:</strong> ${initialStory}</div>`;
+        storyDisplay.innerHTML = `<div class="ai-message"><strong>AI:</strong> ${data.response}</div>`;
         storyDisplay.scrollTop = storyDisplay.scrollHeight;
-        
-    } catch (error) {
-        console.error("Error starting the game:", error);
-        alert("Failed to start the game. Please check the server.");
     }
 }
 
-// NEW FUNCTION to reset the game
-async function newGame() {
-    try {
-        const response = await fetch('/api/new-game', {
-            method: 'POST',
-        });
-        const data = await response.json();
-        
-        // Reset the frontend UI
-        storyDisplay.innerHTML = '';
-        gameUI.style.display = 'none';
-        startScreen.style.display = 'block';
-
-        alert(data.message);
-    } catch (error) {
-        console.error("Error resetting the game:", error);
-        alert("Failed to start a new game. Please try again.");
+async function startNewSession() {
+    const data = await getGameResponse('/api/new-session', {});
+    if (data.sessionId) {
+        sessionId = data.sessionId;
+        localStorage.setItem('sessionId', sessionId);
+        interrogationHistories.clear(); // Clear local storage on new game
+        alert("New game session created!");
+        startGame();
     }
+}
+
+// Interrogation logic
+function startInterrogation(suspectName) {
+    currentSuspect = suspectName;
+    interrogationBox.style.display = 'block';
+    storyDisplay.style.display = 'none';
+    interrogationSuspectName.textContent = `Interrogating ${suspectName}`;
+    
+    // Load existing history or a new intro
+    const history = interrogationHistories.get(suspectName);
+    if (history) {
+        interrogationDisplay.innerHTML = history;
+        interrogationDisplay.scrollTop = interrogationDisplay.scrollHeight;
+    } else {
+        interrogationDisplay.innerHTML = `<div class="ai-message"><strong>AI:</strong> You approach ${suspectName}. What is your first question?</div>`;
+    }
+}
+
+function closeInterrogation() {
+    currentSuspect = '';
+    interrogationBox.style.display = 'none';
+    storyDisplay.style.display = 'block';
 }
 
 // Add event listeners
-startButton.addEventListener('click', startGame);
-newGameButton.addEventListener('click', newGame);
-sendButton.addEventListener('click', () => handleSend());
+startButton.addEventListener('click', startNewSession);
+newGameButton.addEventListener('click', startNewSession);
+sendButton.addEventListener('click', () => {
+    handleMainConversation(playerInput.value.trim());
+    playerInput.value = '';
+});
 
 playerInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
         event.preventDefault();
-        handleSend();
+        handleMainConversation(playerInput.value.trim());
+        playerInput.value = '';
     }
 });
 
 suspectButtons.forEach(button => {
     button.addEventListener('click', () => {
         const suspectName = button.getAttribute('data-suspect');
-        handleSend(`I want to interrogate ${suspectName}. What do they say when I approach them?`);
+        startInterrogation(suspectName);
     });
 });
 
 roomButtons.forEach(button => {
     button.addEventListener('click', () => {
         const roomName = button.getAttribute('data-room');
-        handleSend(`I want to search the ${roomName}. What do I find?`);
+        currentLocation = roomName;
+        handleMainConversation(`I want to search the ${roomName}. What do I find?`);
     });
 });
 
-accuseButton.addEventListener('click', () => {
-    const accused = prompt("Who do you want to accuse of the murder?");
-    if (accused) {
-        handleSend(`I accuse ${accused}.`);
-    } else {
-        alert("Please enter a name to accuse.");
+closeInterrogationButton.addEventListener('click', closeInterrogation);
+interrogationSendButton.addEventListener('click', () => {
+    handleInterrogation(interrogationInput.value.trim());
+    interrogationInput.value = '';
+});
+interrogationInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        handleInterrogation(interrogationInput.value.trim());
+        interrogationInput.value = '';
     }
 });

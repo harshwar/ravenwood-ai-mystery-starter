@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="game-background"></div>
     <div class="container">
         <h1>Welcome to the AI Murder Mystery</h1>
 
@@ -16,9 +17,21 @@
         </div>
 
         <div id="game-ui" style="display: none;">
-            <div id="story-display">
+            
+            <div id="story-display"></div>
+            
+            <div id="interrogation-box" style="display: none;">
+                <div class="interrogation-header">
+                    <h3 id="interrogation-suspect-name"></h3>
+                    <button id="close-interrogation">Close</button>
                 </div>
-        
+                <div id="interrogation-display"></div>
+                <div class="input-container">
+                    <textarea id="interrogation-input" placeholder="Ask your question..."></textarea>
+                    <button id="interrogation-send-button">Send</button>
+                </div>
+            </div>
+
             <div class="suspects-container">
                 <h3>Suspects</h3>
                 <div class="suspect-list">
@@ -34,7 +47,7 @@
                 <h3>Rooms</h3>
                 <div class="room-list">
                     <button class="room-button" data-room="kitchen">Kitchen</button>
-                    <button class="room-button" data-room="living-room">Living Room</button>
+                    <button class="room-button" data-room="living_room">Living Room</button>
                     <button class="room-button" data-room="basement">Basement</button>
                     <button class="room-button" data-room="bedroom">Bedroom</button>
                     <button class="room-button" data-room="balcony">Balcony</button>
