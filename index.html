@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Murder Mystery</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to the AI Murder Mystery</h1>
+
+        <div id="start-screen">
+            <p>A night of celebration turns into a crime scene...</p>
+            <button id="start-button">Start Game</button>
+        </div>
+
+        <div id="game-ui" style="display: none;">
+            <div id="story-display">
+                </div>
+        
+            <div class="suspects-container">
+                <h3>Suspects</h3>
+                <div class="suspect-list">
+                    <button class="suspect-button" data-suspect="Kabir">Kabir</button>
+                    <button class="suspect-button" data-suspect="Ananya">Ananya</button>
+                    <button class="suspect-button" data-suspect="Siddharth">Siddharth</button>
+                    <button class="suspect-button" data-suspect="Diya">Diya</button>
+                    <button class="suspect-button" data-suspect="Meera">Meera</button>
+                </div>
+            </div>
+            
+            <div class="rooms-container">
+                <h3>Rooms</h3>
+                <div class="room-list">
+                    <button class="room-button" data-room="kitchen">Kitchen</button>
+                    <button class="room-button" data-room="living-room">Living Room</button>
+                    <button class="room-button" data-room="basement">Basement</button>
+                    <button class="room-button" data-room="bedroom">Bedroom</button>
+                    <button class="room-button" data-room="balcony">Balcony</button>
+                </div>
+            </div>
+
+            <div class="accusation-container">
+                <button id="accuse-button">Make Accusation</button>
+            </div>
+            
+            <div class="input-container">
+                <textarea id="player-input" placeholder="Type your next action or question here..."></textarea>
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
